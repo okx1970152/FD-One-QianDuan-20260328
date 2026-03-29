@@ -16,6 +16,7 @@ import { configApi, versionApi } from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import {
   serverMigrationApi,
+  type ServerMigrationExistingCertificate,
   type ServerMigrationImportPreview,
   type ServerMigrationStatus,
 } from '@/services/api/serverMigration';
@@ -108,6 +109,8 @@ export function SystemPage() {
   const [packagePreviewing, setPackagePreviewing] = useState(false);
   const [certImporting, setCertImporting] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [scanningCertificates, setScanningCertificates] = useState(false);
+  const [selectingCertificateId, setSelectingCertificateId] = useState<string | null>(null);
   const [installingIssuer, setInstallingIssuer] = useState<string | null>(null);
   const [lastImportPreview, setLastImportPreview] = useState<ServerMigrationImportPreview | null>(null);
   const [lastBackupPath, setLastBackupPath] = useState('');
@@ -132,6 +135,7 @@ export function SystemPage() {
   const hasDomain = Boolean((migrationStatus?.domain ?? domainDraft).trim());
   const installerStates = migrationStatus?.installers ?? {};
   const selectedIssuerInstalled = Boolean(installerStates[certProvider]?.installed);
+  const scannedCertificates = migrationStatus?.scanned_certificates ?? [];
 
   const appVersion = __APP_VERSION__ || t('system_info.version_unknown');
   const apiVersion = auth.serverVersion || t('system_info.version_unknown');
@@ -425,6 +429,42 @@ export function SystemPage() {
     [loadMigrationStatus, showNotification]
   );
 
+  const handleScanCertificates = useCallback(async () => {
+    setScanningCertificates(true);
+    try {
+      const result = await serverMigrationApi.scanCertificates();
+      const count = result.certificates?.length ?? 0;
+      showNotification(result.message || `已扫描到 ${count} 套证书候选`, count > 0 ? 'success' : 'warning');
+      await loadMigrationStatus();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`扫描已有证书失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setScanningCertificates(false);
+    }
+  }, [loadMigrationStatus, showNotification]);
+
+  const handleSelectScannedCertificate = useCallback(
+    async (certificate: ServerMigrationExistingCertificate) => {
+      setSelectingCertificateId(certificate.id);
+      try {
+        await serverMigrationApi.selectCertificate({
+          id: certificate.id,
+          cert_path: certificate.cert_path,
+          key_path: certificate.key_path,
+        });
+        showNotification('已登记服务器现有证书', 'success');
+        await loadMigrationStatus();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+        showNotification(`使用现有证书失败${message ? `: ${message}` : ''}`, 'error');
+      } finally {
+        setSelectingCertificateId(null);
+      }
+    },
+    [loadMigrationStatus, showNotification]
+  );
+
   const handleExportPackage = useCallback(async () => {
     try {
       const response = await serverMigrationApi.exportPackage();
@@ -570,6 +610,13 @@ export function SystemPage() {
       : migrationStatus?.certificate.status === 'failed'
         ? 'error'
         : 'muted';
+
+  const formatCertificateDate = (value?: string) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toISOString().slice(0, 10).replace(/-/g, '');
+  };
 
   return (
     <div className={styles.container}>
@@ -834,6 +881,18 @@ export function SystemPage() {
             </div>
 
             <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>扫描已有证书</label>
+              <div className={styles.actionGroup}>
+                <Button variant="secondary" onClick={() => void handleScanCertificates()} loading={scanningCertificates}>
+                  扫描服务器证书
+                </Button>
+              </div>
+              <div className={styles.statusText}>
+                优先扫描 /etc/letsencrypt/live、/home/web/certs、项目 certs 目录，并尝试识别当前域名可用证书。
+              </div>
+            </div>
+
+            <div className={styles.migrationRow}>
               <label className={styles.fieldLabel}>证书状态</label>
               <div className={`status-badge ${certBadgeClass}`}>
                 {migrationStatus?.certificate.status === 'issued'
@@ -845,10 +904,48 @@ export function SystemPage() {
               <div className={styles.statusText}>
                 {migrationStatus?.certificate.message ||
                   (migrationStatus?.certificate.expires_at
-                    ? `到期时间 ${new Date(migrationStatus.certificate.expires_at).toISOString().slice(0, 10).replace(/-/g, '')}`
+                    ? `到期时间 ${formatCertificateDate(migrationStatus.certificate.expires_at)}`
                     : '暂无证书')}
               </div>
             </div>
+
+            {scannedCertificates.length > 0 && (
+              <div className={styles.certificateList}>
+                {scannedCertificates.map((item) => (
+                  <div key={item.id} className={styles.certificateCard}>
+                    <div className={styles.certificateCardHeader}>
+                      <div>
+                        <div className={styles.certificateTitle}>
+                          {item.domain || '未解析主域名'}
+                          {item.matched_domain && <span className={`status-badge success ${styles.inlineBadge}`}>匹配当前域名</span>}
+                          {item.selected && <span className={`status-badge warning ${styles.inlineBadge}`}>当前已选</span>}
+                        </div>
+                        <div className={styles.certificateMeta}>
+                          {item.provider || 'existing'} / {item.source_dir || item.cert_path || 'unknown source'}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => void handleSelectScannedCertificate(item)}
+                        loading={selectingCertificateId === item.id}
+                        disabled={Boolean(item.selected) || !item.importable}
+                      >
+                        {item.selected ? '已使用' : '使用这套证书'}
+                      </Button>
+                    </div>
+                    <div className={styles.certificateMeta}>
+                      状态：{item.status} / 到期：{item.expires_at ? formatCertificateDate(item.expires_at) : '未知'}
+                    </div>
+                    <div className={styles.certificateMeta}>证书：{item.cert_path || '未识别'}</div>
+                    <div className={styles.certificateMeta}>私钥：{item.key_path || '未识别'}</div>
+                    <div className={styles.certificateMeta}>
+                      域名集合：{item.domains?.length ? item.domains.join(', ') : item.domain || '未解析'}
+                    </div>
+                    {item.message && <div className={styles.certificateMeta}>{item.message}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className={styles.migrationRow}>
               <label className={styles.fieldLabel}>自动续期</label>

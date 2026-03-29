@@ -11,12 +11,30 @@ export interface ServerMigrationCertificateState {
   importable?: boolean;
 }
 
+export interface ServerMigrationExistingCertificate {
+  id: string;
+  provider?: string;
+  status: string;
+  domain?: string;
+  domains?: string[];
+  issued_at?: string;
+  expires_at?: string;
+  cert_path?: string;
+  key_path?: string;
+  source_dir?: string;
+  message?: string;
+  matched_domain?: boolean;
+  selected?: boolean;
+  importable?: boolean;
+}
+
 export interface ServerMigrationStatus {
   domain?: string;
   dns_status: string;
   dns_result?: string;
   dns_checked_at?: string;
   certificate: ServerMigrationCertificateState;
+  scanned_certificates?: ServerMigrationExistingCertificate[];
   tls: {
     enabled: boolean;
     cert_path?: string;
@@ -56,6 +74,11 @@ export interface ServerMigrationImportResult {
   backup_path?: string;
 }
 
+export interface ServerMigrationScanResult {
+  certificates: ServerMigrationExistingCertificate[];
+  message?: string;
+}
+
 export const serverMigrationApi = {
   getStatus: () => apiClient.get<ServerMigrationStatus>('/server-migration'),
 
@@ -65,6 +88,12 @@ export const serverMigrationApi = {
 
   installIssuer: (provider: string) =>
     apiClient.post('/server-migration/certificate/install', { provider }),
+
+  scanCertificates: () =>
+    apiClient.post<ServerMigrationScanResult>('/server-migration/certificate/scan'),
+
+  selectCertificate: (payload: { id?: string; cert_path?: string; key_path?: string }) =>
+    apiClient.post('/server-migration/certificate/select', payload),
 
   issueCertificate: (provider: string) =>
     apiClient.post('/server-migration/certificate/issue', { provider }),

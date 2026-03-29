@@ -396,6 +396,53 @@
   background-color: var(--bg-secondary);
 }
 
+.certificateList {
+  display: grid;
+  gap: $spacing-sm;
+}
+
+.certificateCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: $spacing-md;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+  background-color: var(--bg-secondary);
+}
+
+.certificateCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+
+  @media (max-width: 900px) {
+    flex-direction: column;
+  }
+}
+
+.certificateTitle {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  flex-wrap: wrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.certificateMeta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.inlineBadge {
+  display: inline-flex;
+}
+
 .hiddenInput {
   display: none;
 }
