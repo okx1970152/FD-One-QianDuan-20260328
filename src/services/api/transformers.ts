@@ -129,6 +129,7 @@ const normalizeCommercialApiKey = (entry: unknown): CommercialApiKeyConfig | nul
   return {
     apiKey: trimmed,
     customerName: String(entry['customer-name'] ?? entry.customerName ?? '').trim() || undefined,
+    modelPrefix: String(entry['model-prefix'] ?? entry.modelPrefix ?? '').trim() || undefined,
     expiresAt: String(entry['expires-at'] ?? entry.expiresAt ?? '').trim() || undefined,
     createdAt: String(entry['created-at'] ?? entry.createdAt ?? '').trim() || undefined,
     enabled: typeof entry.enabled === 'boolean' ? entry.enabled : true,
@@ -144,7 +145,24 @@ const normalizeCommercialApiKey = (entry: unknown): CommercialApiKeyConfig | nul
           totalTokens: Number(usage['total_tokens'] ?? usage.totalTokens ?? 0),
           models: isRecord(usage.models)
             ? Object.fromEntries(
-                Object.entries(usage.models).map(([key, value]) => [key, Number(value ?? 0)])
+                Object.entries(usage.models).map(([key, value]) => {
+                  if (isRecord(value)) {
+                    return [
+                      key,
+                      {
+                        todayTokens: Number(value['today_tokens'] ?? value.todayTokens ?? 0),
+                        totalTokens: Number(value['total_tokens'] ?? value.totalTokens ?? 0),
+                      },
+                    ];
+                  }
+                  return [
+                    key,
+                    {
+                      todayTokens: 0,
+                      totalTokens: Number(value ?? 0),
+                    },
+                  ];
+                })
               )
             : {},
         }

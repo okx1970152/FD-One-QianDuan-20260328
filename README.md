@@ -8,7 +8,7 @@ A single-file Web UI (React + TypeScript) for operating and troubleshooting the 
 **Example URL**: https://remote.router-for.me/  
 **Minimum Required Version**: ≥ 6.8.0 (recommended ≥ 6.8.15)
 
-Since version 6.0.19, the Web UI ships with the main program; access it via `/management.html` on the API port once the service is running.
+Since version 6.0.19, the Web UI ships with the main program; access it via `/ip9988001.html` on the API port once the service is running.
 
 ## What this is (and isn’t)
 
@@ -20,7 +20,7 @@ Since version 6.0.19, the Web UI ships with the main program; access it via `/ma
 ### Option A: Use the Web UI bundled in CLI Proxy API (recommended)
 
 1. Start your CLI Proxy API service.
-2. Open: `http://<host>:<api_port>/management.html`
+2. Open: `http://<host>:<api_port>/ip9988001.html`
 3. Enter your **management key** and connect.
 
 The address is auto-detected from the current page URL; manual override is supported.
@@ -41,8 +41,8 @@ npm install
 npm run build
 ```
 
-- Output: `dist/index.html` and `dist/management.html` (all assets are inlined).
-- `dist/management.html` is generated automatically after every build and is ready for CLI Proxy API bundling or GitHub Release upload.
+- Output: `dist/index.html` and `dist/ip9988001.html` (all assets are inlined).
+- `dist/ip9988001.html` is generated automatically after every build and is ready for CLI Proxy API bundling or GitHub Release upload.
 - To preview locally: `npm run preview`
 
 Tip: opening `dist/index.html` via `file://` may be blocked by browser CORS; serving it (preview/static server) is more reliable.
@@ -118,8 +118,8 @@ The UI language is automatically detected from browser settings and can be manua
 
 ## Build & release notes
 
-- Vite produces a **single HTML** output and the build step also prepares `dist/management.html` for deployment.
-- Tagging `vX.Y.Z` triggers `.github/workflows/release.yml` to publish `dist/management.html`.
+- Vite produces a **single HTML** output and the build step also prepares `dist/ip9988001.html` for deployment.
+- Tagging `vX.Y.Z` triggers `.github/workflows/release.yml` to publish `dist/ip9988001.html`.
 - The UI version shown in the footer is injected at build time (env `VERSION`, git tag, or `package.json` fallback).
 
 ## Security notes

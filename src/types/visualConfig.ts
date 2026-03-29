@@ -55,6 +55,7 @@ export interface VisualApiKeyEntry {
   id: string;
   apiKey: string;
   customerName: string;
+  modelPrefix: string;
   expiresAt: string;
   createdAt: string;
   enabled: boolean;

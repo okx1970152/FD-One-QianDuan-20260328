@@ -22,6 +22,7 @@ function makeVisualApiKeyEntry(partial?: Partial<VisualApiKeyEntry>): VisualApiK
     id: partial?.id || `api-key-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     apiKey: partial?.apiKey || '',
     customerName: partial?.customerName || '',
+    modelPrefix: partial?.modelPrefix || '',
     expiresAt: partial?.expiresAt || '',
     createdAt: partial?.createdAt || '',
     enabled: partial?.enabled ?? true,
@@ -56,6 +57,10 @@ function parseApiKeyEntries(raw: unknown): VisualApiKeyEntry[] {
         customerName:
           typeof (record['customer-name'] ?? record.customerName) === 'string'
             ? String(record['customer-name'] ?? record.customerName).trim()
+            : '',
+        modelPrefix:
+          typeof (record['model-prefix'] ?? record.modelPrefix) === 'string'
+            ? String(record['model-prefix'] ?? record.modelPrefix).trim()
             : '',
         expiresAt:
           typeof (record['expires-at'] ?? record.expiresAt) === 'string'
@@ -631,6 +636,7 @@ export function useVisualConfig() {
           .map((entry) => ({
             'api-key': entry.apiKey.trim(),
             'customer-name': entry.customerName.trim(),
+            'model-prefix': entry.modelPrefix.trim(),
             'expires-at': entry.expiresAt.trim(),
             'created-at': entry.createdAt.trim(),
             enabled: Boolean(entry.enabled),

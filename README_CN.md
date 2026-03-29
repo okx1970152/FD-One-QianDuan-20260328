@@ -8,7 +8,7 @@
 **示例地址**: https://remote.router-for.me/  
 **最低版本要求**: ≥ 6.8.0（推荐 ≥ 6.8.15）
 
-从6.0.19版本开始，Web UI 随主程序一起提供；服务运行后，通过 API 端口上的"/management.html"访问它。
+从6.0.19版本开始，Web UI 随主程序一起提供；服务运行后，通过 API 端口上的"/ip9988001.html"访问它。
 
 ## 这是什么（以及不是什么）
 
@@ -20,7 +20,7 @@
 ### 方式 A：使用 CLI Proxy API 自带的 Web UI（推荐）
 
 1. 启动 CLI Proxy API 服务。
-2. 打开：`http://<host>:<api_port>/management.html`
+2. 打开：`http://<host>:<api_port>/ip9988001.html`
 3. 输入 **管理密钥** 并连接。
 
 页面会根据当前地址自动推断 API 地址，也支持手动修改。
@@ -42,7 +42,7 @@ npm run build
 ```
 
 - 构建产物：`dist/index.html`（资源已全部内联）。
-- 在 CLI Proxy API 的发布流程里会重命名为 `management.html`。
+- 在 CLI Proxy API 的发布流程里会重命名为 `ip9988001.html`。
 - 本地预览：`npm run preview`
 
 提示：直接用 `file://` 打开 `dist/index.html` 可能遇到浏览器 CORS 限制；更稳妥的方式是用预览/静态服务器打开。
@@ -118,7 +118,7 @@ npm run build
 ## 构建与发布说明
 
 - 使用 Vite 输出 **单文件 HTML**（`dist/index.html`），资源全部内联（`vite-plugin-singlefile`）。
-- 打 `vX.Y.Z` 标签会触发 `.github/workflows/release.yml`，发布 `dist/management.html`。
+- 打 `vX.Y.Z` 标签会触发 `.github/workflows/release.yml`，发布 `dist/ip9988001.html`。
 - 页脚显示的 UI 版本在构建期注入（优先使用环境变量 `VERSION`，否则使用 git tag / `package.json`）。
 
 ## 安全提示

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -14,6 +14,11 @@ import {
 } from '@/stores';
 import { configApi, versionApi } from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
+import {
+  serverMigrationApi,
+  type ServerMigrationImportPreview,
+  type ServerMigrationStatus,
+} from '@/services/api/serverMigration';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -29,6 +34,7 @@ import iconGrok from '@/assets/icons/grok.svg';
 import iconDeepseek from '@/assets/icons/deepseek.svg';
 import iconMinimax from '@/assets/icons/minimax.svg';
 import styles from './SystemPage.module.scss';
+import { downloadBlob } from '@/utils/download';
 
 const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: string }> = {
   gpt: { light: iconOpenaiLight, dark: iconOpenaiDark },
@@ -92,19 +98,40 @@ export function SystemPage() {
   const [requestLogTouched, setRequestLogTouched] = useState(false);
   const [requestLogSaving, setRequestLogSaving] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<ServerMigrationStatus | null>(null);
+  const [migrationLoading, setMigrationLoading] = useState(false);
+  const [domainDraft, setDomainDraft] = useState('');
+  const [dnsChecking, setDnsChecking] = useState(false);
+  const [certIssuing, setCertIssuing] = useState(false);
+  const [certProvider, setCertProvider] = useState('certbot');
+  const [packageImporting, setPackageImporting] = useState(false);
+  const [packagePreviewing, setPackagePreviewing] = useState(false);
+  const [certImporting, setCertImporting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [installingIssuer, setInstallingIssuer] = useState<string | null>(null);
+  const [lastImportPreview, setLastImportPreview] = useState<ServerMigrationImportPreview | null>(null);
+  const [lastBackupPath, setLastBackupPath] = useState('');
+  const migrationPackageInputRef = useRef<HTMLInputElement | null>(null);
+  const certFileInputRef = useRef<HTMLInputElement | null>(null);
+  const keyFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const apiKeysCache = useRef<string[]>([]);
   const versionTapCount = useRef(0);
   const versionTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const otherLabel = useMemo(
-    () => (i18n.language?.toLowerCase().startsWith('zh') ? '其他' : 'Other'),
+    () => (i18n.language?.toLowerCase().startsWith('zh') ? '鍏朵粬' : 'Other'),
     [i18n.language]
   );
   const groupedModels = useMemo(() => classifyModels(models, { otherLabel }), [models, otherLabel]);
   const requestLogEnabled = config?.requestLog ?? false;
   const requestLogDirty = requestLogDraft !== requestLogEnabled;
   const canEditRequestLog = auth.connectionStatus === 'connected' && Boolean(config);
+  const dnsStatus = migrationStatus?.dns_status ?? 'unknown';
+  const dnsReady = dnsStatus === 'valid';
+  const hasDomain = Boolean((migrationStatus?.domain ?? domainDraft).trim());
+  const installerStates = migrationStatus?.installers ?? {};
+  const selectedIssuerInstalled = Boolean(installerStates[certProvider]?.installed);
 
   const appVersion = __APP_VERSION__ || t('system_info.version_unknown');
   const apiVersion = auth.serverVersion || t('system_info.version_unknown');
@@ -314,6 +341,188 @@ export function SystemPage() {
     }
   }, [auth.serverVersion, showNotification, t]);
 
+  const loadMigrationStatus = useCallback(async () => {
+    if (auth.connectionStatus !== 'connected') return;
+    setMigrationLoading(true);
+    try {
+      const data = await serverMigrationApi.getStatus();
+      setMigrationStatus(data);
+      setDomainDraft(data.domain ?? '');
+      if (Array.isArray(data.available_issuers) && data.available_issuers.length > 0) {
+        setCertProvider((current) =>
+          data.available_issuers?.includes(current) ? current : data.available_issuers?.[0] || current
+        );
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`迁移状态加载失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setMigrationLoading(false);
+    }
+  }, [auth.connectionStatus, showNotification]);
+
+  const handleSaveDomain = useCallback(async () => {
+    try {
+      await serverMigrationApi.saveDomain(domainDraft.trim());
+      showNotification('域名已保存', 'success');
+      await loadMigrationStatus();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`淇濆瓨鍩熷悕澶辫触${message ? `: ${message}` : ''}`, 'error');
+    }
+  }, [domainDraft, loadMigrationStatus, showNotification]);
+
+  const handleCheckDns = useCallback(async () => {
+    setDnsChecking(true);
+    try {
+      const result = await serverMigrationApi.checkDns();
+      showNotification(result.message || 'DNS 检测完成', result.status === 'valid' ? 'success' : 'warning');
+      await loadMigrationStatus();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`DNS 检测失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setDnsChecking(false);
+    }
+  }, [loadMigrationStatus, showNotification]);
+
+  const handleIssueCertificate = useCallback(async () => {
+    setCertIssuing(true);
+    try {
+      const result = await serverMigrationApi.issueCertificate(certProvider);
+      const message =
+        typeof result === 'object' && result && 'message' in result && typeof result.message === 'string'
+          ? result.message
+          : '证书申请完成';
+      showNotification(message, 'success');
+      await loadMigrationStatus();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`证书申请失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setCertIssuing(false);
+    }
+  }, [certProvider, loadMigrationStatus, showNotification]);
+
+  const handleInstallIssuer = useCallback(
+    async (provider: string) => {
+      setInstallingIssuer(provider);
+      try {
+        const result = await serverMigrationApi.installIssuer(provider);
+        const message =
+          typeof result === 'object' && result && 'message' in result && typeof result.message === 'string'
+            ? result.message
+            : `${provider} installed`;
+        showNotification(message, 'success');
+        await loadMigrationStatus();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+        showNotification(`安装 ${provider} 失败${message ? `: ${message}` : ''}`, 'error');
+      } finally {
+        setInstallingIssuer(null);
+      }
+    },
+    [loadMigrationStatus, showNotification]
+  );
+
+  const handleExportPackage = useCallback(async () => {
+    try {
+      const response = await serverMigrationApi.exportPackage();
+      const blob = response.data as Blob;
+      const header = response.headers?.['content-disposition'] ?? response.headers?.['Content-Disposition'];
+      const match = typeof header === 'string' ? /filename=\"?([^\";]+)\"?/i.exec(header) : null;
+      downloadBlob({
+        filename: match?.[1] || `migration-package-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`,
+        blob,
+      });
+      showNotification('迁移包已开始下载', 'success');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`导出迁移包失败${message ? `: ${message}` : ''}`, 'error');
+    }
+  }, [showNotification]);
+
+  const handleImportPackage = useCallback(async (file: File) => {
+    setPackageImporting(true);
+    try {
+      const result = await serverMigrationApi.importPackage(file);
+      setLastBackupPath(result.backup_path || '');
+      showNotification(result.message || '迁移包导入完成', 'success');
+      await loadMigrationStatus();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`导入迁移包失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setPackageImporting(false);
+    }
+  }, [loadMigrationStatus, showNotification]);
+
+  const handlePreviewAndImportPackage = useCallback(
+    async (file: File) => {
+      setPackagePreviewing(true);
+      try {
+        const preview = await serverMigrationApi.previewImportPackage(file);
+        setLastImportPreview(preview);
+        const summary = [
+          `文件数：${preview.files.length}`,
+          preview.overwrite_paths?.length ? `将覆盖：${preview.overwrite_paths.length} 项` : '不会覆盖现有文件',
+          preview.missing_files?.length ? `缺少关键文件：${preview.missing_files.join(', ')}` : '证书关键文件完整',
+          preview.warnings?.length ? `提示：${preview.warnings.join('；')}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        showConfirmation({
+          title: '导入迁移包',
+          message: `${summary}\n\n确认后将先自动备份当前环境，再执行导入。`,
+          confirmText: '确认导入',
+          onConfirm: () => {
+            void handleImportPackage(file);
+          },
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+        showNotification(`预检查迁移包失败${message ? `: ${message}` : ''}`, 'error');
+      } finally {
+        setPackagePreviewing(false);
+      }
+    },
+    [handleImportPackage, showConfirmation, showNotification]
+  );
+
+  const handleImportCertificate = useCallback(async () => {
+    const certFile = certFileInputRef.current?.files?.[0];
+    const keyFile = keyFileInputRef.current?.files?.[0];
+    if (!certFile || !keyFile) {
+      showNotification('请同时选择 fullchain.pem 和 privkey.pem', 'warning');
+      return;
+    }
+    setCertImporting(true);
+    try {
+      await serverMigrationApi.importCertificate(certFile, keyFile, 'imported');
+      showNotification('证书已导入', 'success');
+      await loadMigrationStatus();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`导入证书失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setCertImporting(false);
+    }
+  }, [loadMigrationStatus, showNotification]);
+
+  const handleRestartService = useCallback(async () => {
+    setRestarting(true);
+    try {
+      await serverMigrationApi.restartService();
+      showNotification('服务已触发重启', 'success');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      showNotification(`重启服务失败${message ? `: ${message}` : ''}`, 'error');
+    } finally {
+      setRestarting(false);
+    }
+  }, [showNotification]);
+
   useEffect(() => {
     fetchConfig().catch(() => {
       // ignore
@@ -338,6 +547,29 @@ export function SystemPage() {
     fetchModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.connectionStatus, auth.apiBase]);
+
+  useEffect(() => {
+    void loadMigrationStatus();
+  }, [loadMigrationStatus]);
+
+  const dnsBadgeClass =
+    dnsStatus === 'valid'
+      ? 'success'
+      : dnsStatus === 'invalid'
+        ? 'error'
+        : dnsStatus === 'empty'
+          ? 'muted'
+          : 'warning';
+
+  const dnsBadgeText =
+    dnsStatus === 'valid' ? '已生效' : dnsStatus === 'invalid' ? '未生效' : dnsStatus === 'empty' ? '无域名' : '待检测';
+
+  const certBadgeClass =
+    migrationStatus?.certificate.status === 'issued'
+      ? 'success'
+      : migrationStatus?.certificate.status === 'failed'
+        ? 'error'
+        : 'muted';
 
   return (
     <div className={styles.container}>
@@ -516,6 +748,178 @@ export function SystemPage() {
             </Button>
           </div>
         </Card>
+
+                <Card title="服务器迁移与域名证书">
+          <p className={styles.sectionDescription}>
+            保存域名、检测公网 DNS、安装证书工具、申请或导入证书、导出与导入迁移包，并支持一键重启服务。
+          </p>
+          <div className={styles.migrationGrid}>
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>当前环境</label>
+              <div className={`status-badge ${migrationStatus?.environment === 'test' ? 'warning' : 'success'}`}>
+                {migrationStatus?.environment || 'unknown'}
+              </div>
+              <div className={styles.statusText}>{migrationLoading ? '正在加载迁移状态...' : '用于区分测试环境和正式环境'}</div>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>公网域名</label>
+              <input
+                className="input"
+                value={domainDraft}
+                onChange={(event) => setDomainDraft(event.target.value)}
+                placeholder="example.com"
+              />
+              <Button onClick={() => void handleSaveDomain()} disabled={!auth.apiBase}>
+                保存域名
+              </Button>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>公网 DNS</label>
+              <div className={`status-badge ${dnsBadgeClass}`}>{dnsBadgeText}</div>
+              <Button onClick={() => void handleCheckDns()} loading={dnsChecking}>
+                检测公网 DNS
+              </Button>
+            </div>
+
+            {(migrationStatus?.dns_result || migrationLoading) && (
+              <div className={styles.statusText}>
+                {migrationLoading ? '正在加载迁移状态...' : migrationStatus?.dns_result}
+              </div>
+            )}
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>证书工具安装</label>
+              <div className={styles.actionGroup}>
+                {['certbot', 'acme.sh'].map((item) => (
+                  <Button
+                    key={item}
+                    variant={installerStates[item]?.installed ? 'secondary' : 'primary'}
+                    onClick={() => void handleInstallIssuer(item)}
+                    loading={installingIssuer === item}
+                    disabled={Boolean(installerStates[item]?.installed)}
+                  >
+                    {installerStates[item]?.installed ? `${item} 已安装` : `一键安装 ${item}`}
+                  </Button>
+                ))}
+              </div>
+              <div className={styles.statusText}>
+                certbot：{installerStates.certbot?.installed ? '已安装' : '未安装'}
+                {' / '}
+                acme.sh：{installerStates['acme.sh']?.installed ? '已安装' : '未安装'}
+              </div>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>一键申请域名证书</label>
+              <select
+                className={`select ${styles.providerSelect}`}
+                value={certProvider}
+                onChange={(event) => setCertProvider(event.target.value)}
+              >
+                {(migrationStatus?.available_issuers?.length ? migrationStatus.available_issuers : ['certbot', 'acme.sh']).map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+              <Button
+                onClick={() => void handleIssueCertificate()}
+                loading={certIssuing}
+                disabled={!hasDomain || !dnsReady || !selectedIssuerInstalled}
+              >
+                一键申请公网域名证书
+              </Button>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>证书状态</label>
+              <div className={`status-badge ${certBadgeClass}`}>
+                {migrationStatus?.certificate.status === 'issued'
+                  ? '证书已申请'
+                  : migrationStatus?.certificate.status === 'failed'
+                    ? '证书异常'
+                    : '未导入'}
+              </div>
+              <div className={styles.statusText}>
+                {migrationStatus?.certificate.message ||
+                  (migrationStatus?.certificate.expires_at
+                    ? `到期时间 ${new Date(migrationStatus.certificate.expires_at).toISOString().slice(0, 10).replace(/-/g, '')}`
+                    : '暂无证书')}
+              </div>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>自动续期</label>
+              <div className={`status-badge ${migrationStatus?.renewal?.ready ? 'success' : 'muted'}`}>
+                {migrationStatus?.renewal?.ready ? '已接管' : '未接管'}
+              </div>
+              <div className={styles.statusText}>{migrationStatus?.renewal?.message || '尚未接管自动续期'}</div>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>导入现有证书</label>
+              <input ref={certFileInputRef} type="file" accept=".pem,.cer,.crt" />
+              <div className={styles.actionGroup}>
+                <input ref={keyFileInputRef} type="file" accept=".pem,.key" />
+                <Button onClick={() => void handleImportCertificate()} loading={certImporting}>
+                  导入证书
+                </Button>
+              </div>
+            </div>
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>迁移包</label>
+              <div className={styles.actionGroup}>
+                <Button onClick={() => void handleExportPackage()}>一键下载迁移数据</Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => migrationPackageInputRef.current?.click()}
+                  loading={packageImporting || packagePreviewing}
+                >
+                  上传并导入迁移包
+                </Button>
+                <input
+                  ref={migrationPackageInputRef}
+                  type="file"
+                  accept=".zip"
+                  className={styles.hiddenInput}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      void handlePreviewAndImportPackage(file);
+                    }
+                    event.currentTarget.value = '';
+                  }}
+                />
+              </div>
+              <div className={styles.statusText}>
+                {lastBackupPath ? `已自动备份到 ${lastBackupPath}` : '导入前会自动备份当前环境'}
+              </div>
+            </div>
+
+            {lastImportPreview && (
+              <div className={styles.detailGrid}>
+                <div className={styles.statusText}>预检查文件数：{lastImportPreview.files.length}</div>
+                <div className={styles.statusText}>
+                  预检查覆盖项：{lastImportPreview.overwrite_paths?.length || 0}
+                </div>
+                <div className={styles.statusText}>
+                  缺少关键文件：{lastImportPreview.missing_files?.length ? lastImportPreview.missing_files.join(', ') : '无'}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.migrationRow}>
+              <label className={styles.fieldLabel}>服务控制</label>
+              <Button variant="danger" onClick={() => void handleRestartService()} loading={restarting}>
+                一键重启服务
+              </Button>
+              <div className={styles.statusText}>容器环境下会优先尝试 compose，失败后走自退出来触发重启。</div>
+            </div>
+          </div>
+        </Card>
       </div>
 
       <Modal
@@ -554,3 +958,6 @@ export function SystemPage() {
     </div>
   );
 }
+
+
+

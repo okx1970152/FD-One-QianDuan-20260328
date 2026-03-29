@@ -4,10 +4,10 @@ import process from 'node:process';
 
 const distDir = path.resolve(process.cwd(), 'dist');
 const indexPath = path.join(distDir, 'index.html');
-const managementPath = path.join(distDir, 'management.html');
+const outputPath = path.join(distDir, 'ip9988001.html');
 
 await mkdir(distDir, { recursive: true });
 await stat(indexPath);
-await copyFile(indexPath, managementPath);
+await copyFile(indexPath, outputPath);
 
-console.log(`Prepared ${path.relative(process.cwd(), managementPath)}`);
+console.log(`Prepared ${path.relative(process.cwd(), outputPath)}`);

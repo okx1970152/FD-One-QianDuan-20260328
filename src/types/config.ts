@@ -9,6 +9,7 @@ import type { AmpcodeConfig } from './ampcode';
 export interface CommercialApiKeyConfig {
   apiKey: string;
   customerName?: string;
+  modelPrefix?: string;
   expiresAt?: string;
   createdAt?: string;
   enabled?: boolean;
@@ -19,7 +20,13 @@ export interface CommercialApiKeyConfig {
     todayTokens?: number;
     totalRequests?: number;
     totalTokens?: number;
-    models?: Record<string, number>;
+    models?: Record<
+      string,
+      {
+        todayTokens?: number;
+        totalTokens?: number;
+      }
+    >;
   };
 }
 

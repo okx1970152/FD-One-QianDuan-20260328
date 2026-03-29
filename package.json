@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "postbuild": "node scripts/prepare-management-html.mjs",
+    "postbuild": "node scripts/prepare-ip9988001-html.mjs",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,scss}\"",

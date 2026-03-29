@@ -347,6 +347,59 @@
   text-overflow: ellipsis;
 }
 
+.migrationGrid {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.migrationRow {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  gap: $spacing-md;
+  align-items: center;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fieldLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.statusText {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.providerSelect {
+  min-width: 180px;
+}
+
+.actionGroup {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-md;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+  background-color: var(--bg-secondary);
+}
+
+.hiddenInput {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .aboutLogo {
     width: 92px;

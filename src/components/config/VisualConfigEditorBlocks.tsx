@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -53,12 +53,12 @@ function ExpandableInput({
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    // Strip newlines — these fields are single-line identifiers/paths that
+    // Strip newlines 鈥?these fields are single-line identifiers/paths that
     // would break YAML serialization if they contained line breaks.
     const sanitized = e.target.value.replace(/[\r\n]/g, '');
     onChange(sanitized);
     // autoResize is handled by useLayoutEffect after React syncs the
-    // sanitized value back to the DOM — calling it here would measure
+    // sanitized value back to the DOM 鈥?calling it here would measure
     // stale content.
   };
 
@@ -94,8 +94,7 @@ function ExpandableInput({
             title={t('common.expand')}
             aria-label={t('common.expand')}
           >
-            ▼
-          </button>
+            鈻?          </button>
         )}
       </div>
     );
@@ -121,8 +120,7 @@ function ExpandableInput({
         title={t('common.collapse')}
         aria-label={t('common.collapse')}
       >
-        ▲
-      </button>
+        鈻?      </button>
     </div>
   );
 }
@@ -182,7 +180,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
         expiresAt?: string;
         todayTokens: number;
         totalTokens: number;
-        models: Record<string, number>;
+        models: Record<string, { todayTokens: number; totalTokens: number }>;
       }
     >
   >({});
@@ -192,6 +190,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
         id: entry.id || makeClientId(),
         apiKey: entry.apiKey || '',
         customerName: entry.customerName || '',
+        modelPrefix: entry.modelPrefix || '',
         expiresAt: entry.expiresAt || '',
         createdAt: entry.createdAt || '',
         enabled: entry.enabled ?? true,
@@ -200,7 +199,9 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
       })),
     [value]
   );
-  const [apiKeyIds, setApiKeyIds] = useState(() => apiKeys.map((entry) => entry.id || makeClientId()));
+  const [apiKeyIds, setApiKeyIds] = useState(() =>
+    apiKeys.map((entry) => entry.id || makeClientId())
+  );
   const renderApiKeyIds = useMemo(() => {
     if (apiKeyIds.length === apiKeys.length) return apiKeyIds;
     if (apiKeyIds.length > apiKeys.length) return apiKeyIds.slice(0, apiKeys.length);
@@ -217,6 +218,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
   const [editingApiKeyId, setEditingApiKeyId] = useState<string | null>(null);
   const [apiKeyValue, setApiKeyValue] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [modelPrefix, setModelPrefix] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('30');
   const [expiresAtValue, setExpiresAtValue] = useState('');
   const [note, setNote] = useState('');
@@ -230,6 +232,20 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
     const array = new Uint8Array(16);
     crypto.getRandomValues(array);
     return 'xxapi-' + Array.from(array, (b) => charset[b % charset.length]).join('');
+  }
+
+  function normalizePrefixInput(input: string): string {
+    return input.trim().replace(/^\/+|\/+$/g, '').replace(/\s+/g, '');
+  }
+
+  function normalizeBaseModelName(input: string): string {
+    const trimmed = input.trim().replace(/^\/+|\/+$/g, '');
+    if (!trimmed) return '';
+    const parts = trimmed.split('/');
+    if (parts.length >= 2) {
+      return parts.slice(1).join('/').trim();
+    }
+    return trimmed;
   }
 
   function formatDateInput(date: Date): string {
@@ -248,33 +264,23 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
   const availableModels = useMemo(() => {
     const set = new Set<string>();
     models.forEach((model) => {
-      const name = String(model?.name ?? '').trim();
+      const name = normalizeBaseModelName(String(model?.name ?? ''));
       if (name) set.add(name);
     });
     apiKeys.forEach((entry) => {
       entry.allowedModels.forEach((model) => {
-        const trimmed = model.trim();
-        if (trimmed) set.add(trimmed);
+        const name = normalizeBaseModelName(model);
+        if (name) set.add(name);
       });
     });
     return Array.from(set).sort((left, right) => left.localeCompare(right));
   }, [apiKeys, models]);
 
-  const groupedModels = useMemo(() => {
-    const groups = new Map<string, string[]>();
-    availableModels.forEach((model) => {
-      const group = model.includes('/') ? model.split('/')[0] : 'default';
-      const existing = groups.get(group) || [];
-      existing.push(model);
-      groups.set(group, existing);
-    });
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [availableModels]);
-
   const openAddModal = () => {
     setEditingApiKeyId(null);
     setApiKeyValue(generateSecureApiKey());
     setCustomerName('');
+    setModelPrefix(String(apiKeys.length + 1));
     setExpiresInDays('30');
     setExpiresAtValue(formatDateInput(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)));
     setNote('');
@@ -292,11 +298,14 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
     setEditingApiKeyId(apiKeyId);
     setApiKeyValue(current.apiKey);
     setCustomerName(current.customerName);
+    setModelPrefix(current.modelPrefix);
     setExpiresInDays('');
     setExpiresAtValue(current.expiresAt ? current.expiresAt.slice(0, 10) : '');
     setNote(current.note);
     setEnabled(current.enabled);
-    setAllowedModels(current.allowedModels);
+    setAllowedModels(
+      current.allowedModels.map((model) => normalizeBaseModelName(model)).filter(Boolean)
+    );
     setManualModelInput('');
     setFormError('');
     setModalOpen(true);
@@ -306,6 +315,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
     setModalOpen(false);
     setApiKeyValue('');
     setCustomerName('');
+    setModelPrefix('');
     setExpiresInDays('30');
     setExpiresAtValue('');
     setNote('');
@@ -329,6 +339,11 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
 
   const handleSave = () => {
     const trimmed = apiKeyValue.trim();
+    const normalizedPrefix = normalizePrefixInput(modelPrefix);
+    const normalizedAllowedModels = Array.from(
+      new Set(allowedModels.map((model) => normalizeBaseModelName(model)).filter(Boolean))
+    );
+
     if (!trimmed) {
       setFormError('API Key 不能为空');
       return;
@@ -337,8 +352,12 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
       setFormError('API Key 必须以 xxapi- 开头');
       return;
     }
-    if (allowedModels.length === 0) {
-      setFormError('至少选择一个允许调用的模型');
+    if (!normalizedPrefix) {
+      setFormError('客户前缀不能为空');
+      return;
+    }
+    if (normalizedAllowedModels.length === 0) {
+      setFormError('至少选择一个基础模型');
       return;
     }
 
@@ -349,6 +368,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
       id: editingApiKeyId || makeClientId(),
       apiKey: trimmed,
       customerName: customerName.trim(),
+      modelPrefix: normalizedPrefix,
       createdAt:
         editingApiKeyId === null
           ? new Date().toISOString()
@@ -356,7 +376,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
       expiresAt: toIsoEndOfDay(expiresAtValue),
       enabled,
       note: note.trim(),
-      allowedModels: Array.from(new Set(allowedModels.map((model) => model.trim()).filter(Boolean))),
+      allowedModels: normalizedAllowedModels,
     };
     const nextKeys =
       editingApiKeyId === null
@@ -369,8 +389,8 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
     closeModal();
   };
 
-  const handleCopy = async (apiKey: string) => {
-    const copied = await copyToClipboard(apiKey);
+  const handleCopyText = async (value: string) => {
+    const copied = await copyToClipboard(value);
     showNotification(
       t(copied ? 'notification.link_copied' : 'notification.copy_failed'),
       copied ? 'success' : 'error'
@@ -383,15 +403,17 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
   };
 
   const handleToggleAllowedModel = (modelName: string) => {
+    const normalized = normalizeBaseModelName(modelName);
+    if (!normalized) return;
     setAllowedModels((current) =>
-      current.includes(modelName)
-        ? current.filter((item) => item !== modelName)
-        : [...current, modelName]
+      current.includes(normalized)
+        ? current.filter((item) => item !== normalized)
+        : [...current, normalized]
     );
   };
 
   const handleAddManualModel = () => {
-    const trimmed = manualModelInput.trim();
+    const trimmed = normalizeBaseModelName(manualModelInput);
     if (!trimmed) return;
     setAllowedModels((current) => (current.includes(trimmed) ? current : [...current, trimmed]));
     setManualModelInput('');
@@ -399,7 +421,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
 
   const handleLoadModels = async () => {
     if (!authApiBase) {
-      showNotification('当前未连接到服务器，暂时无法自动读取模型列表', 'warning');
+      showNotification('当前未连接到服务端，暂时无法自动读取模型列表', 'warning');
       return;
     }
     try {
@@ -425,7 +447,16 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
             models: Object.fromEntries(
               Object.entries(item.usage?.models ?? {}).map(([model, tokens]) => [
                 model,
-                Number(tokens ?? 0),
+                {
+                  todayTokens:
+                    typeof tokens === 'object' && tokens !== null
+                      ? Number((tokens as { todayTokens?: number }).todayTokens ?? 0)
+                      : 0,
+                  totalTokens:
+                    typeof tokens === 'object' && tokens !== null
+                      ? Number((tokens as { totalTokens?: number }).totalTokens ?? 0)
+                      : Number(tokens ?? 0),
+                },
               ])
             ),
           },
@@ -433,7 +464,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
       );
       setLiveApiKeys(mapped);
     } catch {
-      // Ignore live refresh failures here; the editor still works with local values.
+      // Keep local editor usable even if live refresh fails.
     }
   }, [authApiBase, connectionStatus]);
 
@@ -462,155 +493,253 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
     return `${trimmed}/v1`;
   }, [authApiBase]);
 
+  const inferProviderName = useCallback((modelName: string) => {
+    const normalized = modelName.toLowerCase();
+    if (
+      normalized.startsWith('gpt-') ||
+      normalized.includes('codex') ||
+      normalized.startsWith('o1') ||
+      normalized.startsWith('o3') ||
+      normalized.startsWith('o4')
+    ) {
+      return 'OpenAI';
+    }
+    if (normalized.startsWith('claude')) return 'Claude';
+    if (normalized.startsWith('gemini')) return 'Gemini';
+    if (normalized.startsWith('glm') || normalized.startsWith('minimax')) return 'iFlow';
+    if (normalized.startsWith('kimi')) return 'Kimi';
+    if (normalized.startsWith('qwen')) return 'Qwen';
+    return 'Custom';
+  }, []);
+
+  const buildScopedModelName = useCallback((prefix: string, model: string) => {
+    const cleanPrefix = normalizePrefixInput(prefix);
+    const cleanModel = normalizeBaseModelName(model);
+    if (!cleanModel) return '';
+    if (!cleanPrefix) return cleanModel;
+    return `${cleanPrefix}/${cleanModel}`;
+  }, []);
+
   return (
     <div className="form-group" style={{ marginBottom: 0 }}>
       <div className={styles.blockHeaderRow}>
         <label style={{ margin: 0 }}>
-          {t('config_management.visual.api_keys.label', { defaultValue: '商业 API Keys' })}
+          {t('config_management.visual.api_keys.label', {
+            defaultValue: 'API 密钥列表 (api-keys)',
+          })}
         </label>
         <Button size="sm" onClick={openAddModal} disabled={disabled}>
-          {t('config_management.visual.api_keys.add', { defaultValue: '新增' })}
+          {t('config_management.visual.api_keys.add', { defaultValue: '添加 API 密钥' })}
         </Button>
       </div>
 
       {apiKeys.length === 0 ? (
         <div className={styles.emptyState}>
-          {t('config_management.visual.api_keys.empty', { defaultValue: '还没有创建任何 API Key' })}
+          {t('config_management.visual.api_keys.empty', {
+            defaultValue: '还没有创建任何 API Key',
+          })}
         </div>
       ) : (
         <div className="item-list" style={{ marginTop: 4 }}>
-          {apiKeys.map((entry, index) => (
-            <div key={renderApiKeyIds[index] ?? `${entry.apiKey}-${index}`} className="item-row">
-              {(() => {
-                const live = liveApiKeys[entry.apiKey];
-                const expiresAt = live?.expiresAt || entry.expiresAt;
-                const todayTokens = live?.todayTokens ?? 0;
-                const totalTokens = live?.totalTokens ?? 0;
-                const topModels = Object.entries(live?.models ?? {})
-                  .sort((left, right) => right[1] - left[1])
-                  .slice(0, 3);
-                const primaryModel = entry.allowedModels[0] || 'one/gpt-5.4';
-                return (
-                  <>
-                    <div className="item-meta" style={{ display: 'grid', gap: 8 }}>
-                      <div className="pill">#{index + 1}</div>
-                      <div className="item-title">{entry.customerName || '未命名客户'}</div>
-                      <div className="item-subtitle">
-                        {maskApiKey(String(entry.apiKey || ''))}
-                        {expiresAt ? ` · 到期 ${expiresAt.slice(0, 10)}` : ' · 永不过期'}
-                        {entry.enabled ? ' · 启用' : ' · 已禁用'}
-                      </div>
-                      <div className="item-subtitle">
-                        已授权 {entry.allowedModels.length} 个模型
-                        {entry.allowedModels.length > 0
-                          ? `：${entry.allowedModels.slice(0, 3).join(', ')}`
-                          : ''}
-                      </div>
-                      <div className="item-subtitle">
-                        今日 Tokens：{todayTokens} · 总 Tokens：{totalTokens}
-                      </div>
-                      {topModels.length > 0 ? (
+          {apiKeys.map((entry, index) => {
+            const live = liveApiKeys[entry.apiKey];
+            const expiresAt = live?.expiresAt || entry.expiresAt;
+            const title = `${index + 1}-${entry.customerName || '未命名客户'}`;
+            const configBundle = `Base URL: ${baseUrlGuide}\nAPI Key: ${entry.apiKey}`;
+            const scopedModels = entry.allowedModels.map((model) => {
+              const displayModel = buildScopedModelName(entry.modelPrefix, model);
+              return {
+                displayModel,
+                providerName: inferProviderName(model),
+                totalTokens:
+                  live?.models?.[displayModel]?.totalTokens ?? live?.models?.[model]?.totalTokens ?? 0,
+                todayTokens:
+                  live?.models?.[displayModel]?.todayTokens ?? live?.models?.[model]?.todayTokens ?? 0,
+              };
+            });
+
+            return (
+              <div
+                key={renderApiKeyIds[index] ?? `${entry.apiKey}-${index}`}
+                className="item-row"
+                style={{
+                  background: '#d7e8d3',
+                  border: '1px solid #b2c9ab',
+                  borderRadius: 22,
+                  padding: 18,
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4)',
+                }}
+              >
+                <div className="item-meta" style={{ display: 'grid', gap: 12 }}>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      width: 'fit-content',
+                      padding: '4px 12px',
+                      borderRadius: 999,
+                      border: '1px solid #b7cbb2',
+                      background: '#edf6ea',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {title}
+                  </div>
+                  <div className="item-subtitle">
+                    {maskApiKey(String(entry.apiKey || ''))}
+                    {expiresAt ? ` · 到期 ${expiresAt.slice(0, 10)}` : ' · 永不过期'}
+                    {entry.enabled ? ' · 启用' : ' · 已禁用'}
+                  </div>
+                  {entry.note ? <div className="hint">备注：{entry.note}</div> : null}
+
+                  <div
+                    style={{
+                      border: '1px solid #c4d7bf',
+                      borderRadius: 14,
+                      padding: 12,
+                      background: '#edf6ea',
+                      display: 'grid',
+                      gap: 8,
+                    }}
+                  >
+                    <div className="hint" style={{ margin: 0, fontWeight: 600 }}>
+                      配置指南
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gap: 8,
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div className="item-subtitle">Base URL：{baseUrlGuide}</div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleCopyText(baseUrlGuide)}
+                        disabled={disabled}
+                      >
+                        复制
+                      </Button>
+                      <div className="item-subtitle">API Key：{entry.apiKey}</div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleCopyText(entry.apiKey)}
+                        disabled={disabled}
+                      >
+                        复制
+                      </Button>
+                    </div>
+                    <div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleCopyText(configBundle)}
+                        disabled={disabled}
+                      >
+                        一键复制
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      border: '1px solid #c4d7bf',
+                      borderRadius: 14,
+                      padding: 12,
+                      background: '#edf6ea',
+                      display: 'grid',
+                      gap: 8,
+                    }}
+                  >
+                    <div className="hint" style={{ margin: 0, fontWeight: 600 }}>
+                      可用模型
+                    </div>
+                    {scopedModels.length > 0 ? (
+                      scopedModels.map((model, modelIndex) => (
                         <div
+                          key={model.displayModel}
                           style={{
-                            border: '1px dashed var(--border-color)',
-                            borderRadius: 12,
-                            padding: 10,
+                            display: 'grid',
+                            gap: 8,
+                            gridTemplateColumns: 'minmax(0, 1fr) auto',
+                            alignItems: 'center',
+                            paddingTop: modelIndex === 0 ? 0 : 8,
+                            borderTop: modelIndex === 0 ? 'none' : '1px dashed #c4d7bf',
                           }}
                         >
-                          <div className="hint" style={{ margin: 0, fontWeight: 600 }}>
-                            模型用量 Top
+                          <div className="item-subtitle">
+                            {model.displayModel} {model.providerName} {model.totalTokens}/{model.todayTokens}
                           </div>
-                          {topModels.map(([model, tokens]) => (
-                            <div key={model} className="item-subtitle">
-                              {model}：{tokens} tokens
-                            </div>
-                          ))}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleCopyText(model.displayModel)}
+                            disabled={disabled}
+                          >
+                            复制
+                          </Button>
                         </div>
-                      ) : null}
-                      {entry.allowedModels.length > 0 ? (
-                        <div className="hint" style={{ margin: 0 }}>
-                          模型分布：{entry.allowedModels.join('，')}
-                        </div>
-                      ) : null}
-                      <div
-                        style={{
-                          border: '1px solid var(--border-color)',
-                          borderRadius: 12,
-                          padding: 12,
-                          background: 'rgba(255,255,255,0.03)',
-                        }}
-                      >
-                        <div className="hint" style={{ margin: 0, fontWeight: 600 }}>
-                          配置指南
-                        </div>
-                        <div className="item-subtitle">Base URL：{baseUrlGuide}</div>
-                        <div className="item-subtitle">API Key：{entry.apiKey}</div>
-                        <div className="item-subtitle">示例模型：{primaryModel}</div>
+                      ))
+                    ) : (
+                      <div className="hint" style={{ margin: 0 }}>
+                        暂无可用模型
                       </div>
-                    </div>
-                    <div className="item-actions">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleExtendKey(entry.apiKey, 30)}
-                        disabled={disabled}
-                      >
-                        续期 30 天
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleExtendKey(entry.apiKey, 60)}
-                        disabled={disabled}
-                      >
-                        续期 60 天
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleCopy(entry.apiKey)}
-                        disabled={disabled}
-                      >
-                        {t('common.copy')}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => openEditModal(renderApiKeyIds[index] ?? '')}
-                        disabled={disabled}
-                      >
-                        {t('config_management.visual.common.edit', { defaultValue: '编辑' })}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleDelete(renderApiKeyIds[index] ?? '')}
-                        disabled={disabled}
-                      >
-                        {t('config_management.visual.common.delete', { defaultValue: '删除' })}
-                      </Button>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          ))}
+                    )}
+                  </div>
+                </div>
+
+                <div className="item-actions">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleExtendKey(entry.apiKey, 30)}
+                    disabled={disabled}
+                  >
+                    续期 30 天
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleExtendKey(entry.apiKey, 60)}
+                    disabled={disabled}
+                  >
+                    续期 60 天
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openEditModal(renderApiKeyIds[index] ?? '')}
+                    disabled={disabled}
+                  >
+                    {t('config_management.visual.common.edit', { defaultValue: '编辑' })}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => handleDelete(renderApiKeyIds[index] ?? '')}
+                    disabled={disabled}
+                  >
+                    {t('config_management.visual.common.delete', { defaultValue: '删除' })}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       <div className="hint">
-        创建时自动生成 `xxapi-` 前缀密钥，并为每个客户绑定允许调用的完整模型名，例如
-        `one/gpt-5.4`。
+        创建时自动生成 `xxapi-` 前缀密钥。你只需要填写客户前缀，例如 `1`，页面会自动把基础模型展示成
+        `1/gpt-5.4` 这样的最终调用格式。
       </div>
 
       <Modal
         open={modalOpen}
         onClose={closeModal}
-        title={
-          editingApiKeyId !== null
-            ? '编辑商业 API Key'
-            : '创建商业 API Key'
-        }
+        title={editingApiKeyId !== null ? '编辑 API Key' : '创建 API Key'}
         footer={
           <>
             <Button variant="secondary" onClick={closeModal} disabled={disabled}>
@@ -648,28 +777,44 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
           <div id={apiKeyHintId} className="hint">
             系统默认自动生成，建议不要手动修改。
           </div>
-          <label>客户名称</label>
+
+          <label>客户名字</label>
           <input
             className="input"
-            placeholder="例如：one"
+            placeholder="例如：老王 / 公司A"
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
             disabled={disabled}
           />
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+
+          <label>客户前缀</label>
+          <input
+            className="input"
+            placeholder="例如：1"
+            value={modelPrefix}
+            onChange={(e) => setModelPrefix(normalizePrefixInput(e.target.value))}
+            disabled={disabled}
+          />
+
+          <div
+            style={{
+              display: 'grid',
+              gap: 12,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            }}
+          >
             <div>
               <label>有效期天数</label>
               <Select
                 value={expiresInDays}
-                onChange={(value) => {
-                  setExpiresInDays(value);
-                  if (value) {
-                    const days = Number(value);
-                    if (Number.isFinite(days) && days > 0) {
-                      setExpiresAtValue(
-                        formatDateInput(new Date(Date.now() + days * 24 * 60 * 60 * 1000))
-                      );
-                    }
+                onChange={(nextValue) => {
+                  setExpiresInDays(nextValue);
+                  if (!nextValue) return;
+                  const days = Number(nextValue);
+                  if (Number.isFinite(days) && days > 0) {
+                    setExpiresAtValue(
+                      formatDateInput(new Date(Date.now() + days * 24 * 60 * 60 * 1000))
+                    );
                   }
                 }}
                 options={[
@@ -693,6 +838,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
               />
             </div>
           </div>
+
           <label>备注</label>
           <input
             className="input"
@@ -701,6 +847,7 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
             onChange={(e) => setNote(e.target.value)}
             disabled={disabled}
           />
+
           <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               type="checkbox"
@@ -710,8 +857,9 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
             />
             启用此 API Key
           </label>
+
           <div className={styles.blockHeaderRow}>
-            <label style={{ margin: 0 }}>允许调用的模型</label>
+            <label style={{ margin: 0 }}>允许调用的基础模型</label>
             <Button
               type="button"
               variant="secondary"
@@ -722,49 +870,63 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
               {modelsLoading ? '刷新中...' : '刷新模型列表'}
             </Button>
           </div>
+
           <div style={{ display: 'grid', gap: 8 }}>
             <div className={styles.apiKeyModalInputRow}>
               <input
                 className="input"
-                placeholder="手动补充完整模型名，例如 one/gpt-5.4"
+                placeholder="手动补充基础模型名，例如 gpt-5.4"
                 value={manualModelInput}
                 onChange={(e) => setManualModelInput(e.target.value)}
                 disabled={disabled}
               />
-              <Button type="button" variant="secondary" size="sm" onClick={handleAddManualModel} disabled={disabled}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleAddManualModel}
+                disabled={disabled}
+              >
                 添加
               </Button>
             </div>
-            {groupedModels.length === 0 ? (
-              <div className="hint">当前还没有可供选择的模型列表，可以手动输入完整模型名。</div>
+
+            {availableModels.length === 0 ? (
+              <div className="hint">当前还没有可供选择的模型列表，可以手动输入基础模型名。</div>
             ) : (
-              <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid var(--border-color)', borderRadius: 12, padding: 12 }}>
-                {groupedModels.map(([group, items]) => (
-                  <div key={group} style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
-                    <div className="hint" style={{ margin: 0, fontWeight: 600 }}>
-                      {group === 'default' ? '未分组' : group}
-                    </div>
-                    {items.map((modelName) => (
-                      <label key={modelName} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <input
-                          type="checkbox"
-                          checked={allowedModels.includes(modelName)}
-                          onChange={() => handleToggleAllowedModel(modelName)}
-                          disabled={disabled}
-                        />
-                        <span>{modelName}</span>
-                      </label>
-                    ))}
-                  </div>
+              <div
+                style={{
+                  maxHeight: 220,
+                  overflow: 'auto',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 12,
+                  padding: 12,
+                  display: 'grid',
+                  gap: 8,
+                }}
+              >
+                {availableModels.map((modelName) => (
+                  <label key={modelName} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={allowedModels.includes(modelName)}
+                      onChange={() => handleToggleAllowedModel(modelName)}
+                      disabled={disabled}
+                    />
+                    <span>{modelName}</span>
+                  </label>
                 ))}
               </div>
             )}
+
             {allowedModels.length > 0 ? (
               <div className="hint">
-                当前已授权：{allowedModels.join(', ')}
+                当前已授权模型：
+                {allowedModels.map((model) => buildScopedModelName(modelPrefix, model)).join(', ')}
               </div>
             ) : null}
           </div>
+
           {formError && (
             <div id={apiKeyErrorId} className="error-box">
               {formError}
@@ -775,7 +937,6 @@ export const ApiKeysCardEditor = memo(function ApiKeysCardEditor({
     </div>
   );
 });
-
 const StringListEditor = memo(function StringListEditor({
   value,
   disabled,
@@ -1322,3 +1483,4 @@ export const PayloadFilterRulesEditor = memo(function PayloadFilterRulesEditor({
     </div>
   );
 });
+
